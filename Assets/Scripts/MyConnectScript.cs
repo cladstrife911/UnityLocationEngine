@@ -2,16 +2,97 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.UI;
 
 [Serializable]
 public class MyAnchorData
 {
-    public float timestamp;
+    public int anchorId;
     public int distance;
     public int power;
+
+    public void print()
+    {
+        Debug.Log("Anchor " + anchorId + ": " + distance + " cm, " + power + " dBm");
+    }
+}
+
+public class MyLeResultClass
+{
+    public int X;
+    public int Y;
+    public int Z;
+
+    public void print()
+    {
+        Debug.Log("X:" + X + ", Y: " + Y + ", Z:" + Z);
+    }
+}
+
+public class MyAnchorDataParser
+{
+    public List<MyAnchorData> myAnchorDataList;
+    public MyLeResultClass myLeResult;
+    public int nbOfAnchors;
+    public int timestamp;
+
+    public MyAnchorDataParser(int nb)
+    {
+        myAnchorDataList = new List<MyAnchorData>();
+        myLeResult = new MyLeResultClass();
+        this.nbOfAnchors = nb;
+    }
+
+    /*
+     * \param str is the csv formated file
+     */
+    public void parse(string str)
+    {
+        this.myAnchorDataList.Clear();
+
+        //string fileData = System.IO.File.ReadAllText(data);
+        string[] lines = str.Split("\n"[0]);
+        string[] lineData = (lines[0].Trim()).Split(";"[0]);
+
+        timestamp = Int32.Parse(lineData[0]);
+        //Debug.Log("timestamp:" + timestamp);
+        if (lineData[1]== "[UWB] LEv1")
+        {
+            for (int i =0;i< nbOfAnchors; i++)
+            {
+                MyAnchorData anchorData = new MyAnchorData();
+                anchorData.anchorId = i+1;
+                anchorData.distance = Int32.Parse(lineData[2+i*2]);
+                anchorData.power = Int32.Parse(lineData[3+i*2]);
+
+                //anchorData.print();
+                this.myAnchorDataList.Add(anchorData);
+            }
+
+            myLeResult.X = Int32.Parse(lineData[16]);
+            myLeResult.Y = Int32.Parse(lineData[17]);
+            myLeResult.Z = Int32.Parse(lineData[18]);
+        }
+        else
+        {
+            Debug.Log("invalid line format");
+        }
+    }
+
+    public MyAnchorData getAnchorData(int anchorId)
+    {
+        return myAnchorDataList.Find(x => x.anchorId.Equals(anchorId));
+    }
+
+    public MyLeResultClass getLeResultData()
+    {
+        return this.myLeResult;
+    }
+
 }
 
 public class MyConnectScript : MonoBehaviour
@@ -28,6 +109,7 @@ public class MyConnectScript : MonoBehaviour
     public InputField serverAddressInputField;
     public Text text_log_view;
     public GameObject mySphere;
+    public GameObject myCharacter;
 
 
     public MeshRenderer myRenderer;
@@ -80,26 +162,24 @@ public class MyConnectScript : MonoBehaviour
     {
         string[] aData = data.Split('|');
         Debug.Log("Received from server: " + data);
-        text_log_view.text += data + "\r\n";
-
-        //MyAnchorData anchorData = JsonUtility.FromJson<MyAnchorData>(data);
-
-        //string fileData = System.IO.File.ReadAllText(data);
-        string[] lines = data.Split("\n"[0]);
-        string[] lineData = (lines[0].Trim()).Split(";"[0]);
+        text_log_view.text = data + "\r\n";
 
         MyAnchorData anchorData = new MyAnchorData();
-        anchorData.distance = Int32.Parse(lineData[2]);
-        anchorData.power = Int32.Parse(lineData[3]);
+        MyAnchorDataParser parser = new MyAnchorDataParser(7);
+        parser.parse(data);
+        anchorData = parser.getAnchorData(1);
 
-        Debug.Log("anchorData " + anchorData.distance +"cm, "+ anchorData.power +"dBm");
-        float dist = anchorData.distance / 100.0f;
+        //Debug.Log("anchorData " + anchorData.distance +"cm, "+ anchorData.power +"dBm");
+        float dist = anchorData.distance/10.0f;// / 100.0f;
         mySphere.transform.localScale = new Vector3(dist, dist, dist);
 
         //myRenderer = mySphere.GetComponent<MeshRenderer>();
         Color color = myRenderer.material.color;
         color.a = (anchorData.power+109.0f)/109.0f;
         myRenderer.material.color = color;
+
+        MyLeResultClass leResult = parser.getLeResultData();
+        myCharacter.transform.position = new Vector3(leResult.X, 1, leResult.Y);
 
 #if MY_TEST
         switch (aData[0])
